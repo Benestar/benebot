@@ -44,6 +44,7 @@ class UpdateBadges extends Command {
 
 	protected function configure() {
 		$defaultUser = $this->appConfig->get( 'defaults.user' );
+		$defaultDatabase = $this->appConfig->get( 'defaults.database' );
 		$defaultWiki = $this->appConfig->get( 'defaults.wiki' );
 		$defaultRepo = $this->appConfig->get( 'defaults.repo' );
 
@@ -55,6 +56,13 @@ class UpdateBadges extends Command {
 				( $defaultUser === null ? InputOption::VALUE_REQUIRED : InputOption::VALUE_OPTIONAL ),
 				'The configured user to use',
 				$defaultUser
+			)
+			->addOption(
+				'database',
+				null,
+				( $defaultUser === null ? InputOption::VALUE_REQUIRED : InputOption::VALUE_OPTIONAL ),
+				'The configured database to use',
+				$defaultDatabase
 			)
 			->addOption(
 				'wiki',
@@ -88,13 +96,14 @@ class UpdateBadges extends Command {
 
 	protected function execute( InputInterface $input, OutputInterface $output ) {
 		$wiki = $input->getOption( 'wiki' );
+		$database = $input->getOption( 'database' );
 		$user = $input->getOption( 'user' );
 		$repo = $input->getOption( 'repo' );
 
 		$userDetails = $this->appConfig->get( 'users.' . $user );
+		$databaseDetails = $this->appConfig->get( 'users.' . $database );
 		$wikiDetails = $this->appConfig->get( 'wikis.' . $wiki );
 		$repoDetails = $this->appConfig->get( 'wikis.' . $repo );
-		$databaseDetails = $this->appConfig->get( 'users.database' );
 
 		if( $userDetails === null ) {
 			throw new RuntimeException( 'User not found in config' );
