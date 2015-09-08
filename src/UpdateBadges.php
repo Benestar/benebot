@@ -164,19 +164,26 @@ class UpdateBadges extends Command {
 
 		if ( $results ) {
 			while ( $row = $results->fetch_assoc() ) {
-				/** @var Item $item */
-				$item = $revisionsGetter->getFromSiteAndTitle( $wiki, $row['page_title'] )->getContent()->getData();
-				$badges = $item->getSiteLinkList()->getBySiteId( $wiki )->getBadges();
-
-				if ( in_array( $badgeId, $badges ) ) {
-					$output->write( '.' );
-					$skipped++;
-					continue;
-				}
-
-				$badges[] = $badgeId;
-
 				try {
+					/** @var Item $item */
+					$revision = $revisionsGetter->getFromSiteAndTitle( $wiki, $row['page_title'] );
+
+					if ( $revision === false ) {
+						$output->writeln( "\nNo item found for $wiki:{$row['page_title']}" );
+						$failed++;
+					}
+
+					$item = $revision->getContent()->getData();
+					$badges = $item->getSiteLinkList()->getBySiteId( $wiki )->getBadges();
+
+					if ( in_array( $badgeId, $badges ) ) {
+						$output->write( '.' );
+						$skipped++;
+						continue;
+					}
+
+					$badges[] = $badgeId;
+
 					$siteLinkSetter->set(
 						new SiteLink( $wiki, $row['page_title'], $badges ),
 						new SiteLink( $wiki, $row['page_title'] )
