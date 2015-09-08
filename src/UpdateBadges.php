@@ -79,6 +79,18 @@ class UpdateBadges extends Command {
 				$defaultRepo
 			)
 			->addOption(
+				'badge',
+				null,
+				InputOption::VALUE_REQUIRED,
+				'The badge to set'
+			)
+			->addOption(
+				'category',
+				null,
+				InputOption::VALUE_REQUIRED,
+				'The category to query'
+			)
+			->addOption(
 				'bot',
 				null,
 				InputOption::VALUE_OPTIONAL,
