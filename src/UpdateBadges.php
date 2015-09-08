@@ -4,6 +4,7 @@ namespace BeneBot;
 
 use DataValues\Serializers\DataValueSerializer;
 use Deserializers\Deserializer;
+use Exception;
 use Mediawiki\Api\ApiUser;
 use Mediawiki\Api\MediawikiApi;
 use Mediawiki\Bot\Config\AppConfig;
@@ -157,25 +158,44 @@ class UpdateBadges extends Command {
 			AND page_namespace = 0'
 		);
 
+		$skipped = 0;
+		$added = 0;
+		$failed = 0;
+
 		if ( $results ) {
 			while ( $row = $results->fetch_assoc() ) {
 				/** @var Item $item */
 				$item = $revisionsGetter->getFromSiteAndTitle( $wiki, $row['page_title'] )->getContent()->getData();
 				$badges = $item->getSiteLinkList()->getBySiteId( $wiki )->getBadges();
-				$badges[] = $badgeId;
-				$success = $siteLinkSetter->set(
-					new SiteLink( $wiki, $row['page_title'], $badges ),
-					new SiteLink( $wiki, $row['page_title'] )
-					//$editInfo
-				);
 
-				if ( $success ) {
-					$output->writeln( "Added badge for $wiki:{$row['page_title']}" );
-				} else {
-					$output->writeln( "Failed to add badge for $wiki:{$row['page_title']}" );
+				if ( in_array( $badgeId, $badges ) ) {
+					$output->write( '.' );
+					$skipped++;
+					continue;
+				}
+
+				$badges[] = $badgeId;
+
+				try {
+					$siteLinkSetter->set(
+						new SiteLink( $wiki, $row['page_title'], $badges ),
+						new SiteLink( $wiki, $row['page_title'] )
+						//$editInfo
+					);
+
+					$output->writeln( "\nAdded badge for $wiki:{$row['page_title']}" );
+					$added++;
+				} catch ( Exception $ex ) {
+					$output->writeln( "\nFailed to add badge for $wiki:{$row['page_title']} (" . $ex->getMessage() . ")" );
+					$failed++;
 				}
 			}
 		}
+
+		$output->writeln( "Finished iterating through $results->num_rows site links." );
+		$output->writeln( "Added: $added" );
+		$output->writeln( "Skipped: $skipped" );
+		$output->writeln( "Failed: $failed" );
 
 		return null;
 	}
