@@ -125,8 +125,7 @@ class PurgeBadgesPageProps extends Command {
 			JOIN page ON pl_from = page_id
 			WHERE pl_title IN( "' . implode( '", "', $badgeIds ) . '" )
 			AND pl_namespace = 0
-			AND pl_from_namespace = 0
-			LIMIT 100'
+			AND pl_from_namespace = 0'
 		);
 
 		if ( !$results ) {
@@ -207,8 +206,7 @@ class PurgeBadgesPageProps extends Command {
 					'forcelinkupdate' => true
 				);
 
-				$output->writeln( $params['titles'] );
-				//$api->getRequest( new SimpleRequest( 'purge', $params ) );
+				$api->getRequest( new SimpleRequest( 'purge', $params ) );
 				$progressBar->advance( 10 );
 			}
 
