@@ -8,10 +8,8 @@ use Deserializers\Deserializer;
 use Exception;
 use Mediawiki\Api\ApiUser;
 use Mediawiki\Api\MediawikiApi;
-use Mediawiki\Api\MediawikiFactory;
 use Mediawiki\Api\SimpleRequest;
 use Mediawiki\Bot\Config\AppConfig;
-use Mediawiki\DataModel\EditInfo;
 use RuntimeException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\ProgressBar;
@@ -21,7 +19,6 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Wikibase\Api\WikibaseFactory;
 use Wikibase\DataModel\Entity\Item;
 use Wikibase\DataModel\Entity\ItemId;
-use Wikibase\DataModel\SiteLink;
 
 /**
  * Purge Wikipedia pages with badges to update page props.
@@ -55,7 +52,7 @@ class PurgeBadgesPageProps extends Command {
 		$defaultRepo = $this->appConfig->get( 'defaults.repo' );
 
 		$this->setName( 'task:purge-badge-page-props' )
-			->setDescription( 'Update badges based on Wikipedia categories on Wikidata' )
+			->setDescription( 'Purge page props of pages to update badges' )
 			->addOption(
 				'user',
 				null,
@@ -184,6 +181,8 @@ class PurgeBadgesPageProps extends Command {
 			$output->writeln( "\nPurging $count pages for site $siteId" );
 
 			$api = new MediawikiApi( $url );
+			$api->login( new ApiUser( $userDetails['username'], $userDetails['password'] ) );
+
 			$progressBar = new ProgressBar( $output, $count );
 			$progressBar->start();
 
