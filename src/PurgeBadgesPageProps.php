@@ -125,13 +125,17 @@ class PurgeBadgesPageProps extends Command {
 			JOIN page ON pl_from = page_id
 			WHERE pl_title IN( "' . implode( '", "', $badgeIds ) . '" )
 			AND pl_namespace = 0
-			AND pl_from_namespace = 0'
+			AND pl_from_namespace = 0
+			LIMIT 100'
 		);
 
 		if ( !$results ) {
 			$output->writeln( 'Failed to fetch badge usage' );
 			return -1;
 		}
+
+		$progressBar = new ProgressBar( $output, $results->num_rows );
+		$progressBar->start();
 
 		while ( $row = $results->fetch_assoc() ) {
 			try {
@@ -149,13 +153,15 @@ class PurgeBadgesPageProps extends Command {
 					if ( !empty( $siteLink->getBadges() ) ) {
 						$pagesToPurge[$siteLink->getSiteId()][] = $siteLink->getPageName();
 					}
-
-					$output->write( '.' );
 				}
 			} catch ( Exception $ex ) {
 				$output->writeln( "\nFailed to fetch data for id {$row['page_title']} (" . $ex->getMessage() . ")" );
 			}
+
+			$progressBar->advance();
 		}
+
+		$progressBar->finish();
 
 		$results->free();
 
@@ -201,7 +207,8 @@ class PurgeBadgesPageProps extends Command {
 					'forcelinkupdate' => true
 				);
 
-				$api->getRequest( new SimpleRequest( 'purge', $params ) );
+				$output->writeln( $params['titles'] );
+				//$api->getRequest( new SimpleRequest( 'purge', $params ) );
 				$progressBar->advance( 10 );
 			}
 
