@@ -115,6 +115,7 @@ class PurgeBadgesPageProps extends Command {
 		$output->writeln( 'Fetching badge ids...' );
 
 		$badgeIds = $badgeIdsGetter->get();
+		$output->writeln( 'Got ' . implode( ', ', $badgeIds ) );
 
 		$output->writeln( 'Fetching badge usages...' );
 		$pagesToPurge = array();
@@ -123,32 +124,36 @@ class PurgeBadgesPageProps extends Command {
 			'SELECT page_title FROM pagelinks
 			JOIN page ON pl_from = page_id
 			WHERE pl_title IN( "' . implode( '", "', $badgeIds ) . '" )
+			AND pl_namespace = 0
 			AND pl_from_namespace = 0'
 		);
 
-		if ( $results ) {
-			while ( $row = $results->fetch_assoc() ) {
-				try {
-					/** @var Item $item */
-					$revision = $revisionsGetter->getFromId( new ItemId( $row['page_title'] ) );
+		if ( !$results ) {
+			$output->writeln( 'Failed to fetch badge usage' );
+			return -1;
+		}
 
-					if ( $revision === false ) {
-						// this shouldn't (can't) happen
-						$output->writeln( "\nNo item found for id {$row['page_title']}" );
-					}
+		while ( $row = $results->fetch_assoc() ) {
+			try {
+				/** @var Item $item */
+				$revision = $revisionsGetter->getFromId( new ItemId( $row['page_title'] ) );
 
-					$item = $revision->getContent()->getData();
-
-					foreach ( $item->getSiteLinkList()->toArray() as $siteLink ) {
-						if ( !empty( $siteLink->getBadges() ) ) {
-							$pagesToPurge[$siteLink->getSiteId()][] = $siteLink->getPageName();
-						}
-
-						$output->write( '.' );
-					}
-				} catch ( Exception $ex ) {
-					$output->writeln( "\nFailed to fetch data for id {$row['page_title']} (" . $ex->getMessage() . ")" );
+				if ( $revision === false ) {
+					// this shouldn't (can't) happen
+					$output->writeln( "\nNo item found for id {$row['page_title']}" );
 				}
+
+				$item = $revision->getContent()->getData();
+
+				foreach ( $item->getSiteLinkList()->toArray() as $siteLink ) {
+					if ( !empty( $siteLink->getBadges() ) ) {
+						$pagesToPurge[$siteLink->getSiteId()][] = $siteLink->getPageName();
+					}
+
+					$output->write( '.' );
+				}
+			} catch ( Exception $ex ) {
+				$output->writeln( "\nFailed to fetch data for id {$row['page_title']} (" . $ex->getMessage() . ")" );
 			}
 		}
 
@@ -161,11 +166,14 @@ class PurgeBadgesPageProps extends Command {
 			'select site_global_key, site_data from sites'
 		);
 
-		if ( $results ) {
-			while ( $row = $results->fetch_assoc() ) {
-				$data = unserialize( $row['site_data'] );
-				$siteApis[$row['site_global_key']] = str_replace( '$1', 'api.php', $data['paths']['file_path'] );
-			}
+		if ( !$results ) {
+			$output->writeln( 'Failed to fetch sites data' );
+			return -1;
+		}
+
+		while ( $row = $results->fetch_assoc() ) {
+			$data = unserialize( $row['site_data'] );
+			$siteApis[$row['site_global_key']] = str_replace( '$1', 'api.php', $data['paths']['file_path'] );
 		}
 
 		$results->free();
@@ -189,7 +197,8 @@ class PurgeBadgesPageProps extends Command {
 
 			foreach ( array_chunk( $pagesToPurge[$siteId], 10 ) as $pages ) {
 				$params = array(
-					'titles' => implode( '|', $pages )
+					'titles' => implode( '|', $pages ),
+					'forcelinkupdate' => true
 				);
 
 				$api->getRequest( new SimpleRequest( 'purge', $params ) );
