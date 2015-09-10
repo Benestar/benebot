@@ -1,6 +1,5 @@
 <?php
 
-
 namespace BeneBot;
 
 use DataValues\Serializers\DataValueSerializer;
@@ -113,7 +112,12 @@ class PurgeBadgesPageProps extends Command {
 		$badgeIdsGetter = $wikibaseFactory->newBadgeIdsGetter();
 		$revisionsGetter = $wikibaseFactory->newRevisionGetter();
 
+		$output->writeln( 'Fetching badge ids...' );
+
 		$badgeIds = $badgeIdsGetter->get();
+
+		$output->writeln( 'Fetching badge usages...' );
+		$pagesToPurge = array();
 
 		$results = $db->query(
 			'SELECT page_title FROM pagelinks
@@ -121,9 +125,6 @@ class PurgeBadgesPageProps extends Command {
 			WHERE pl_title IN( "' . implode( '", "', $badgeIds ) . '" )
 			AND pl_from_namespace = 0'
 		);
-
-		$output->writeln( 'Fetching data first...' );
-		$pagesToPurge = array();
 
 		if ( $results ) {
 			while ( $row = $results->fetch_assoc() ) {
@@ -173,12 +174,12 @@ class PurgeBadgesPageProps extends Command {
 
 		foreach ( $siteApis as $siteId => $url ) {
 			if ( !isset( $pagesToPurge[$siteId] ) ) {
-				$output->writeln( "\nNo pages found to purge for site $siteId" );
+				$output->writeln( "\nNo pages found to purge for site $siteId ($url)" );
 				continue;
 			}
 
 			$count = count( $pagesToPurge[$siteId] );
-			$output->writeln( "\nPurging $count pages for site $siteId" );
+			$output->writeln( "\nPurging $count pages for site $siteId ($url)" );
 
 			$api = new MediawikiApi( $url );
 			$api->login( new ApiUser( $userDetails['username'], $userDetails['password'] ) );
@@ -196,8 +197,8 @@ class PurgeBadgesPageProps extends Command {
 			}
 
 			$progressBar->finish();
-
 			$allCount += $count;
+			sleep( 0.1 );
 		}
 
 		$output->writeln( "\nFinished purging $allCount pages" );
