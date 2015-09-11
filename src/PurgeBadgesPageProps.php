@@ -110,7 +110,7 @@ class PurgeBadgesPageProps extends Command {
 
 		$wikibaseFactory = new WikibaseFactory( $repoApi, $this->dataValueDeserializer, new DataValueSerializer() );
 		$badgeIdsGetter = $wikibaseFactory->newBadgeIdsGetter();
-		$revisionsGetter = $wikibaseFactory->newRevisionGetter();
+		$revisionsGetter = $wikibaseFactory->newRevisionsGetter();
 
 		$output->writeln( 'Fetching badge ids...' );
 
@@ -133,38 +133,44 @@ class PurgeBadgesPageProps extends Command {
 			return -1;
 		}
 
+		$entityIds = array();
+
+		while ( $row = $results->fetch_assoc() ) {
+			$entityIds[] = $row['page_title'];
+		}
+
+		$results->free();
+
+		$output->writeln( 'Fetching entities...' );
+		$pagesToPurge = array();
+
 		$progressBar = new ProgressBar( $output, $results->num_rows );
 		$progressBar->start();
 
-		while ( $row = $results->fetch_assoc() ) {
+		foreach ( array_chunk( $entityIds, 100 ) as $batch ) {
 			try {
-				/** @var Item $item */
-				$revision = $revisionsGetter->getFromId( new ItemId( $row['page_title'] ) );
+				$revisions = $revisionsGetter->getRevisions( $batch );
 
-				if ( $revision === false ) {
-					// this shouldn't (can't) happen
-					$output->writeln( "\nNo item found for id {$row['page_title']}" );
-				}
+				foreach ( $revisions->toArray() as $revision ) {
+					/** @var Item $item */
+					$item = $revision->getContent()->getData();
 
-				$item = $revision->getContent()->getData();
-
-				foreach ( $item->getSiteLinkList()->toArray() as $siteLink ) {
-					if ( !empty( $siteLink->getBadges() ) ) {
-						$pagesToPurge[$siteLink->getSiteId()][] = $siteLink->getPageName();
+					foreach ( $item->getSiteLinkList()->toArray() as $siteLink ) {
+						if ( !empty( $siteLink->getBadges() ) ) {
+							$pagesToPurge[$siteLink->getSiteId()][] = $siteLink->getPageName();
+						}
 					}
+
+					$progressBar->advance( 100 );
 				}
 			} catch ( Exception $ex ) {
-				$output->writeln( "\nFailed to fetch data for id {$row['page_title']} (" . $ex->getMessage() . ")" );
+				$output->writeln( 'Failed to fetch data for ids ' . implode( ', ', $batch ) . ' (' . $ex->getMessage() . ')' );
 			}
-
-			$progressBar->advance();
 		}
 
 		$progressBar->finish();
 
-		$results->free();
-
-		$output->writeln( "\nStarting to purge pages" );
+		$output->writeln( 'Starting to purge pages' );
 		$siteApis = array();
 
 		$results = $db->query(
