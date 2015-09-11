@@ -161,9 +161,9 @@ class PurgeBadgesPageProps extends Command {
 							$pagesToPurge[$siteLink->getSiteId()][] = $siteLink->getPageName();
 						}
 					}
-
-					$progressBar->advance();
 				}
+
+				$progressBar->advance( $chunk );
 			} catch ( Exception $ex ) {
 				$output->writeln( 'Failed to fetch data for ids ' . implode( ', ', $batch ) . ' (' . $ex->getMessage() . ')' );
 			}
