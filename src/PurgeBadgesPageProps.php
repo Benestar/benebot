@@ -139,12 +139,11 @@ class PurgeBadgesPageProps extends Command {
 			$entityIds[] = $row['page_title'];
 		}
 
+		$progressBar = new ProgressBar( $output, $results->num_rows );
 		$results->free();
 
 		$output->writeln( 'Fetching entities...' );
 		$pagesToPurge = array();
-
-		$progressBar = new ProgressBar( $output, $results->num_rows );
 		$progressBar->start();
 
 		$chunk = $input->getOption( 'chunk' );
