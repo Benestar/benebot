@@ -162,7 +162,7 @@ class PurgeBadgesPageProps extends Command {
 						}
 					}
 
-					$progressBar->advance( $chunk );
+					$progressBar->advance();
 				}
 			} catch ( Exception $ex ) {
 				$output->writeln( 'Failed to fetch data for ids ' . implode( ', ', $batch ) . ' (' . $ex->getMessage() . ')' );
