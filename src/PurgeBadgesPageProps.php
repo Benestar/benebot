@@ -67,18 +67,18 @@ class PurgeBadgesPageProps extends Command {
 				$defaultDatabase
 			)
 			->addOption(
-				'wiki',
-				null,
-				( $defaultWiki === null ? InputOption::VALUE_REQUIRED : InputOption::VALUE_OPTIONAL ),
-				'The configured wiki to use',
-				$defaultWiki
-			)
-			->addOption(
 				'repo',
 				null,
 				( $defaultRepo === null ? InputOption::VALUE_REQUIRED : InputOption::VALUE_OPTIONAL ),
 				'The Wikibase repository to use',
 				$defaultRepo
+			)
+			->addOption(
+				'chunk',
+				null,
+				InputOption::VALUE_OPTIONAL,
+				'The chunk size to fetch entities',
+				100
 			);
 	}
 
@@ -147,7 +147,9 @@ class PurgeBadgesPageProps extends Command {
 		$progressBar = new ProgressBar( $output, $results->num_rows );
 		$progressBar->start();
 
-		foreach ( array_chunk( $entityIds, 100 ) as $batch ) {
+		$chunk = $input->getOption( 'chunk' );
+
+		foreach ( array_chunk( $entityIds, $chunk ) as $batch ) {
 			try {
 				$revisions = $revisionsGetter->getRevisions( $batch );
 
@@ -161,7 +163,7 @@ class PurgeBadgesPageProps extends Command {
 						}
 					}
 
-					$progressBar->advance( 100 );
+					$progressBar->advance( $chunk );
 				}
 			} catch ( Exception $ex ) {
 				$output->writeln( 'Failed to fetch data for ids ' . implode( ', ', $batch ) . ' (' . $ex->getMessage() . ')' );
