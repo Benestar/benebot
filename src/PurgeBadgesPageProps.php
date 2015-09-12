@@ -100,7 +100,8 @@ class PurgeBadgesPageProps extends Command {
 		}
 
 		$repoApi = new MediawikiApi( $repoDetails['url'] );
-		$loggedIn = $repoApi->login( new ApiUser( $userDetails['username'], $userDetails['password'] ) );
+		$apiUser = new ApiUser( $userDetails['username'], $userDetails['password'] );
+		$loggedIn = $repoApi->login( $apiUser );
 		$db = new \mysqli( $repo . '.labsdb', $databaseDetails['username'], $databaseDetails['password'], $repo . '_p' );
 
 		if( !$loggedIn || $db->connect_error ) {
@@ -112,8 +113,15 @@ class PurgeBadgesPageProps extends Command {
 		$badgeIdsGetter = $wikibaseFactory->newBadgeIdsGetter();
 		$revisionsGetter = $wikibaseFactory->newRevisionsGetter();
 
-		$output->writeln( 'Fetching badge ids...' );
+		$output->writeln( 'Fetching sites info...' );
+		$siteApis = $this->getSiteApis( $db );
 
+		if ( $siteApis === null ) {
+			$output->writeln( 'Failed to fetch sites data' );
+			return -1;
+		}
+
+		$output->writeln( 'Fetching badge ids...' );
 		$badgeIds = $badgeIdsGetter->get();
 		$output->writeln( 'Got ' . implode( ', ', $badgeIds ) );
 
@@ -143,7 +151,6 @@ class PurgeBadgesPageProps extends Command {
 		$results->free();
 
 		$output->writeln( 'Fetching entities...' );
-		$pagesToPurge = array();
 		$progressBar->start();
 
 		$chunk = $input->getOption( 'chunk' );
@@ -172,6 +179,12 @@ class PurgeBadgesPageProps extends Command {
 		$progressBar->finish();
 
 		$output->writeln( 'Starting to purge pages' );
+		$this->purgePages( $pagesToPurge, $siteApis, $output, $apiUser );
+
+		return null;
+	}
+
+	private function getSiteApis( \mysqli $db ) {
 		$siteApis = array();
 
 		$results = $db->query(
@@ -179,8 +192,7 @@ class PurgeBadgesPageProps extends Command {
 		);
 
 		if ( !$results ) {
-			$output->writeln( 'Failed to fetch sites data' );
-			return -1;
+			return null;
 		}
 
 		while ( $row = $results->fetch_assoc() ) {
@@ -190,6 +202,10 @@ class PurgeBadgesPageProps extends Command {
 
 		$results->free();
 
+		return $siteApis;
+	}
+
+	private function purgePages( array $pagesToPurge, array $siteApis, OutputInterface $output, ApiUser $apiUser ) {
 		$allCount = 0;
 
 		foreach ( $siteApis as $siteId => $url ) {
@@ -202,7 +218,7 @@ class PurgeBadgesPageProps extends Command {
 			$output->writeln( "\nPurging $count pages for site $siteId ($url)" );
 
 			$api = new MediawikiApi( $url );
-			$api->login( new ApiUser( $userDetails['username'], $userDetails['password'] ) );
+			$api->login( $apiUser );
 
 			$progressBar = new ProgressBar( $output, $count );
 			$progressBar->start();
@@ -213,18 +229,15 @@ class PurgeBadgesPageProps extends Command {
 					'forcelinkupdate' => true
 				);
 
-				$api->getRequest( new SimpleRequest( 'purge', $params ) );
+				$api->postRequest( new SimpleRequest( 'purge', $params ) );
 				$progressBar->advance( 10 );
 			}
 
 			$progressBar->finish();
 			$allCount += $count;
-			sleep( 0.1 );
 		}
 
 		$output->writeln( "\nFinished purging $allCount pages" );
-
-		return null;
 	}
 
 }
