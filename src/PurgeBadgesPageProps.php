@@ -2,20 +2,13 @@
 
 namespace BeneBot;
 
-use DataValues\Serializers\DataValueSerializer;
-use Deserializers\Deserializer;
 use Exception;
 use Mediawiki\Api\ApiUser;
 use Mediawiki\Api\MediawikiApi;
 use Mediawiki\Api\SimpleRequest;
-use Mediawiki\Bot\Config\AppConfig;
 use RuntimeException;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Helper\ProgressBar;
-use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
-use Symfony\Component\Console\Output\OutputInterface;
-use Wikibase\Api\WikibaseFactory;
 use Wikibase\DataModel\Entity\Item;
 
 /**
@@ -24,54 +17,11 @@ use Wikibase\DataModel\Entity\Item;
  * @licence GNU GPL v2+
  * @author Bene* < benestar.wikimedia@gmail.com >
  */
-class PurgeBadgesPageProps extends Command {
+class PurgeBadgesPageProps implements WikibaseExecutor {
 
-	/**
-	 * @var AppConfig
-	 */
-	private $appConfig;
-
-	/**
-	 * @var Deserializer
-	 */
-	private $dataValueDeserializer;
-
-	public function __construct( AppConfig $appConfig, Deserializer $dataValueDeserializer ) {
-		$this->appConfig = $appConfig;
-		$this->dataValueDeserializer = $dataValueDeserializer;
-
-		parent::__construct( null );
-	}
-
-	protected function configure() {
-		$defaultUser = $this->appConfig->get( 'defaults.user' );
-		$defaultDatabase = $this->appConfig->get( 'defaults.database' );
-		$defaultWiki = $this->appConfig->get( 'defaults.wiki' );
-		$defaultRepo = $this->appConfig->get( 'defaults.repo' );
-
-		$this->setName( 'task:purge-badge-page-props' )
+	public function configure( Command $command ) {
+		$command->setName( 'task:purge-badge-page-props' )
 			->setDescription( 'Purge page props of pages to update badges' )
-			->addOption(
-				'user',
-				null,
-				( $defaultUser === null ? InputOption::VALUE_REQUIRED : InputOption::VALUE_OPTIONAL ),
-				'The configured user to use',
-				$defaultUser
-			)
-			->addOption(
-				'database',
-				null,
-				( $defaultUser === null ? InputOption::VALUE_REQUIRED : InputOption::VALUE_OPTIONAL ),
-				'The configured database to use',
-				$defaultDatabase
-			)
-			->addOption(
-				'repo',
-				null,
-				( $defaultRepo === null ? InputOption::VALUE_REQUIRED : InputOption::VALUE_OPTIONAL ),
-				'The Wikibase repository to use',
-				$defaultRepo
-			)
 			->addOption(
 				'chunk',
 				null,
@@ -81,50 +31,25 @@ class PurgeBadgesPageProps extends Command {
 			);
 	}
 
-	protected function execute( InputInterface $input, OutputInterface $output ) {
-		$user = $input->getOption( 'user' );
-		$database = $input->getOption( 'database' );
-		$repo = $input->getOption( 'repo' );
+	public function execute( CommandHelper $commandHelper ) {
+		$db = $commandHelper->getDatabase( 'repo' );
 
-		$userDetails = $this->appConfig->get( 'users.' . $user );
-		$databaseDetails = $this->appConfig->get( 'users.' . $database );
-		$repoDetails = $this->appConfig->get( 'wikis.' . $repo );
-
-		if( $userDetails === null ) {
-			throw new RuntimeException( 'User not found in config' );
-		}
-
-		if( $repoDetails === null ) {
-			throw new RuntimeException( 'Repo not found in config' );
-		}
-
-		$repoApi = new MediawikiApi( $repoDetails['url'] );
-		$apiUser = new ApiUser( $userDetails['username'], $userDetails['password'] );
-		$loggedIn = $repoApi->login( $apiUser );
-		$db = new \mysqli( $repo . '.labsdb', $databaseDetails['username'], $databaseDetails['password'], $repo . '_p' );
-
-		if( !$loggedIn || $db->connect_error ) {
-			$output->writeln( 'Failed to log in' );
-			return -1;
-		}
-
-		$wikibaseFactory = new WikibaseFactory( $repoApi, $this->dataValueDeserializer, new DataValueSerializer() );
+		$wikibaseFactory = $commandHelper->getWikibaseFactory();
 		$badgeIdsGetter = $wikibaseFactory->newBadgeIdsGetter();
 		$revisionsGetter = $wikibaseFactory->newRevisionsGetter();
 
-		$output->writeln( 'Fetching sites info...' );
+		$commandHelper->writeln( 'Fetching sites info...' );
 		$siteApis = $this->getSiteApis( $db );
 
 		if ( $siteApis === null ) {
-			$output->writeln( 'Failed to fetch sites data' );
-			return -1;
+			throw new RuntimeException( 'Failed to fetch sites data' );
 		}
 
-		$output->writeln( 'Fetching badge ids...' );
+		$commandHelper->writeln( 'Fetching badge ids...' );
 		$badgeIds = $badgeIdsGetter->get();
-		$output->writeln( 'Got ' . implode( ', ', $badgeIds ) );
+		$commandHelper->writeln( 'Got ' . implode( ', ', $badgeIds ) );
 
-		$output->writeln( 'Fetching badge usages...' );
+		$commandHelper->writeln( 'Fetching badge usages...' );
 		$pagesToPurge = array();
 
 		$results = $db->query(
@@ -136,8 +61,7 @@ class PurgeBadgesPageProps extends Command {
 		);
 
 		if ( !$results ) {
-			$output->writeln( 'Failed to fetch badge usage' );
-			return -1;
+			throw new RuntimeException( 'Failed to fetch badge usage' );
 		}
 
 		$entityIds = array();
@@ -146,13 +70,13 @@ class PurgeBadgesPageProps extends Command {
 			$entityIds[] = $row['page_title'];
 		}
 
-		$progressBar = new ProgressBar( $output, $results->num_rows );
+		$progressBar = $commandHelper->getProgressBar( $results->num_rows );
 		$results->free();
 
-		$output->writeln( 'Fetching entities...' );
+		$commandHelper->writeln( 'Fetching entities...' );
 		$progressBar->start();
 
-		$chunk = $input->getOption( 'chunk' );
+		$chunk = $commandHelper->getOption( 'chunk' );
 
 		foreach ( array_chunk( $entityIds, $chunk ) as $batch ) {
 			try {
@@ -171,16 +95,14 @@ class PurgeBadgesPageProps extends Command {
 
 				$progressBar->advance( $chunk );
 			} catch ( Exception $ex ) {
-				$output->writeln( 'Failed to fetch data for ids ' . implode( ', ', $batch ) . ' (' . $ex->getMessage() . ')' );
+				$commandHelper->writeln( 'Failed to fetch data for ids ' . implode( ', ', $batch ) . ' (' . $ex->getMessage() . ')' );
 			}
 		}
 
 		$progressBar->finish();
 
-		$output->writeln( 'Starting to purge pages' );
-		$this->purgePages( $pagesToPurge, $siteApis, $output, $apiUser );
-
-		return null;
+		$commandHelper->writeln( 'Starting to purge pages' );
+		$this->purgePages( $pagesToPurge, $siteApis, $commandHelper, $commandHelper->getApiUser() );
 	}
 
 	private function getSiteApis( \mysqli $db ) {
@@ -204,22 +126,22 @@ class PurgeBadgesPageProps extends Command {
 		return $siteApis;
 	}
 
-	private function purgePages( array $pagesToPurge, array $siteApis, OutputInterface $output, ApiUser $apiUser ) {
+	private function purgePages( array $pagesToPurge, array $siteApis, CommandHelper $commandHelper, ApiUser $apiUser ) {
 		$allCount = 0;
 
 		foreach ( $siteApis as $siteId => $url ) {
 			if ( !isset( $pagesToPurge[$siteId] ) ) {
-				$output->writeln( "\nNo pages found to purge for site $siteId ($url)" );
+				$commandHelper->writeln( "\nNo pages found to purge for site $siteId ($url)" );
 				continue;
 			}
 
 			$count = count( $pagesToPurge[$siteId] );
-			$output->writeln( "\nPurging $count pages for site $siteId ($url)" );
+			$commandHelper->writeln( "\nPurging $count pages for site $siteId ($url)" );
 
 			$api = new MediawikiApi( $url );
 			$api->login( $apiUser );
 
-			$progressBar = new ProgressBar( $output, $count );
+			$progressBar = $commandHelper->getProgressBar( $count );
 			$progressBar->start();
 
 			foreach ( array_chunk( $pagesToPurge[$siteId], 10 ) as $pages ) {
@@ -236,7 +158,7 @@ class PurgeBadgesPageProps extends Command {
 			$allCount += $count;
 		}
 
-		$output->writeln( "\nFinished purging $allCount pages" );
+		$commandHelper->writeln( "\nFinished purging $allCount pages" );
 	}
 
 }

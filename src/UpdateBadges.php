@@ -2,19 +2,10 @@
 
 namespace BeneBot;
 
-use DataValues\Serializers\DataValueSerializer;
-use Deserializers\Deserializer;
 use Exception;
-use Mediawiki\Api\ApiUser;
-use Mediawiki\Api\MediawikiApi;
-use Mediawiki\Bot\Config\AppConfig;
 use Mediawiki\DataModel\EditInfo;
-use RuntimeException;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
-use Symfony\Component\Console\Output\OutputInterface;
-use Wikibase\Api\WikibaseFactory;
 use Wikibase\DataModel\Entity\Item;
 use Wikibase\DataModel\Entity\ItemId;
 use Wikibase\DataModel\SiteLink;
@@ -25,61 +16,11 @@ use Wikibase\DataModel\SiteLink;
  * @licence GNU GPL v2+
  * @author Bene* < benestar.wikimedia@gmail.com >
  */
-class UpdateBadges extends Command {
+class UpdateBadges implements WikibaseExecutor {
 
-	/**
-	 * @var AppConfig
-	 */
-	private $appConfig;
-
-	/**
-	 * @var Deserializer
-	 */
-	private $dataValueDeserializer;
-
-	public function __construct( AppConfig $appConfig, Deserializer $dataValueDeserializer ) {
-		$this->appConfig = $appConfig;
-		$this->dataValueDeserializer = $dataValueDeserializer;
-
-		parent::__construct( null );
-	}
-
-	protected function configure() {
-		$defaultUser = $this->appConfig->get( 'defaults.user' );
-		$defaultDatabase = $this->appConfig->get( 'defaults.database' );
-		$defaultWiki = $this->appConfig->get( 'defaults.wiki' );
-		$defaultRepo = $this->appConfig->get( 'defaults.repo' );
-
-		$this->setName( 'task:update-badges' )
+	public function configure( Command $command ) {
+		$command->setName( 'task:update-badges' )
 			->setDescription( 'Update badges based on Wikipedia categories on Wikidata' )
-			->addOption(
-				'user',
-				null,
-				( $defaultUser === null ? InputOption::VALUE_REQUIRED : InputOption::VALUE_OPTIONAL ),
-				'The configured user to use',
-				$defaultUser
-			)
-			->addOption(
-				'database',
-				null,
-				( $defaultUser === null ? InputOption::VALUE_REQUIRED : InputOption::VALUE_OPTIONAL ),
-				'The configured database to use',
-				$defaultDatabase
-			)
-			->addOption(
-				'wiki',
-				null,
-				( $defaultWiki === null ? InputOption::VALUE_REQUIRED : InputOption::VALUE_OPTIONAL ),
-				'The configured wiki to use',
-				$defaultWiki
-			)
-			->addOption(
-				'repo',
-				null,
-				( $defaultRepo === null ? InputOption::VALUE_REQUIRED : InputOption::VALUE_OPTIONAL ),
-				'The Wikibase repository to use',
-				$defaultRepo
-			)
 			->addOption(
 				'badge',
 				null,
@@ -108,54 +49,31 @@ class UpdateBadges extends Command {
 			);
 	}
 
-	protected function execute( InputInterface $input, OutputInterface $output ) {
-		$user = $input->getOption( 'user' );
-		$database = $input->getOption( 'database' );
-		$wiki = $input->getOption( 'wiki' );
-		$repo = $input->getOption( 'repo' );
+	public function execute( CommandHelper $commandHelper ) {
+		$db = $commandHelper->getDatabase();
 
-		$userDetails = $this->appConfig->get( 'users.' . $user );
-		$databaseDetails = $this->appConfig->get( 'users.' . $database );
-		$wikiDetails = $this->appConfig->get( 'wikis.' . $wiki );
-		$repoDetails = $this->appConfig->get( 'wikis.' . $repo );
-
-		if( $userDetails === null ) {
-			throw new RuntimeException( 'User not found in config' );
-		}
-
-		if( $wikiDetails === null ) {
-			throw new RuntimeException( 'Wiki not found in config' );
-		}
-
-		if( $repoDetails === null ) {
-			throw new RuntimeException( 'Repo not found in config' );
-		}
-
-		$api = new MediawikiApi( $wikiDetails['url'] );
-		$repoApi = new MediawikiApi( $repoDetails['url'] );
-		$loggedIn = $repoApi->login( new ApiUser( $userDetails['username'], $userDetails['password'] ) );
-		$db = new \mysqli( $wiki . '.labsdb', $databaseDetails['username'], $databaseDetails['password'], $wiki . '_p' );
-
-		if( !$loggedIn || $db->connect_error ) {
-			$output->writeln( 'Failed to log in' );
-			return -1;
-		}
-
-		$wikibaseFactory = new WikibaseFactory( $repoApi, $this->dataValueDeserializer, new DataValueSerializer() );
+		$wikibaseFactory = $commandHelper->getWikibaseFactory();
 		$revisionsGetter = $wikibaseFactory->newRevisionGetter();
 		$siteLinkSetter = $wikibaseFactory->newSiteLinkSetter();
 
-		$badgeId = new ItemId( $input->getOption( 'badge' ) );
+		$wiki = $commandHelper->getOption( 'wiki' );
+
+		$badgeId = new ItemId( $commandHelper->getOption( 'badge' ) );
 		$editInfo = new EditInfo(
-			$this->getSummary( $input->getOption( 'summary' ), $input->getOption( 'category' ), $wiki, $badgeId->getSerialization() ),
+			$this->getSummary(
+				$commandHelper->getOption( 'summary' ),
+				$commandHelper->getOption( 'category' ),
+				$wiki,
+				$badgeId->getSerialization()
+			),
 			false,
-			$input->getOption( 'bot' )
+			$commandHelper->getOption( 'bot' )
 		);
 
 		$results = $db->query(
 			'SELECT page_title FROM categorylinks
 			JOIN page ON page_id = cl_from
-			WHERE cl_to = "' . $db->escape_string( $input->getOption( 'category' ) ) . '"
+			WHERE cl_to = "' . $db->escape_string( $commandHelper->getOption( 'category' ) ) . '"
 			AND page_namespace = 0'
 		);
 
@@ -170,15 +88,16 @@ class UpdateBadges extends Command {
 					$revision = $revisionsGetter->getFromSiteAndTitle( $wiki, $row['page_title'] );
 
 					if ( $revision === false ) {
-						$output->writeln( "\nNo item found for $wiki:{$row['page_title']}" );
+						$commandHelper->writeln( "\nNo item found for $wiki:{$row['page_title']}" );
 						$failed++;
+						continue;
 					}
 
 					$item = $revision->getContent()->getData();
 					$badges = $item->getSiteLinkList()->getBySiteId( $wiki )->getBadges();
 
 					if ( in_array( $badgeId, $badges ) ) {
-						$output->write( '.' );
+						$commandHelper->write( '.' );
 						$skipped++;
 						continue;
 					}
@@ -187,14 +106,14 @@ class UpdateBadges extends Command {
 
 					$siteLinkSetter->set(
 						new SiteLink( $wiki, $row['page_title'], $badges ),
-						new SiteLink( $wiki, $row['page_title'] )
-						//$editInfo
+						new SiteLink( $wiki, $row['page_title'] ),
+						$editInfo
 					);
 
-					$output->writeln( "\nAdded badge for $wiki:{$row['page_title']}" );
+					$commandHelper->writeln( "\nAdded badge for $wiki:{$row['page_title']}" );
 					$added++;
 				} catch ( Exception $ex ) {
-					$output->writeln( "\nFailed to add badge for $wiki:{$row['page_title']} (" . $ex->getMessage() . ")" );
+					$commandHelper->writeln( "\nFailed to add badge for $wiki:{$row['page_title']} (" . $ex->getMessage() . ")" );
 					$failed++;
 				}
 			}
@@ -202,12 +121,10 @@ class UpdateBadges extends Command {
 
 		$results->free();
 
-		$output->writeln( "Finished iterating through $results->num_rows site links." );
-		$output->writeln( "Added: $added" );
-		$output->writeln( "Skipped: $skipped" );
-		$output->writeln( "Failed: $failed" );
-
-		return null;
+		$commandHelper->writeln( "Finished iterating through $results->num_rows site links." );
+		$commandHelper->writeln( "Added: $added" );
+		$commandHelper->writeln( "Skipped: $skipped" );
+		$commandHelper->writeln( "Failed: $failed" );
 	}
 
 	private function getSummary( $rawSummary, $category, $wiki, $badgeId ) {

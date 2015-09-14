@@ -20,7 +20,7 @@ $dataValueDeserializer = new DataValues\Deserializers\DataValueDeserializer( arr
 $GLOBALS['awwCommands'][] = function( Mediawiki\Bot\Config\AppConfig $appConfig ) use ( $dataValueDeserializer ) {
 	return array(
 		new BeneBot\SetDefaultRepo( $appConfig ),
-		new BeneBot\UpdateBadges( $appConfig, $dataValueDeserializer ),
-		new BeneBot\PurgeBadgesPageProps( $appConfig, $dataValueDeserializer ),
+		new BeneBot\WikibaseCommand( $appConfig, $dataValueDeserializer, new BeneBot\UpdateBadges() ),
+		new BeneBot\WikibaseCommand( $appConfig, $dataValueDeserializer, new BeneBot\PurgeBadgesPageProps() ),
 	);
 };
